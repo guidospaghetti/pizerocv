@@ -20,8 +20,24 @@ def getFeatureMap(image):
 	_, notMean2 = cv2.threshold(hue, meanHue - 2*stdDev, 255, cv2.THRESH_BINARY_INV)
 	notMean = notMean1 + notMean2
 	return notMean
-
-
+	
+def getLocation(center, pos, heading, height):
+	a = (2 * height) / (cos(horiFoV/2))
+	b = (2 * height) / (cos(vertFoV/2))
+	scaleX = a / 640
+	scaleY = b / 480
+	offset = np.array([[scaleX * center[0]],[scaleY * center[1]])
+	RCW = np.array([[cos(heading), -sin(heading)], [sin(heading), cos(heading)]])
+	Poff = RCW.T*offset
+	GPStarget = pos + np.array([[pos[0] / 89157.66],[pos[1] / 111044.736]])
+	return GPStarget
+	
+lat = 38.280011
+long = -76.413012
+height = 10
+heading = 120
+horiFoV = 53.50
+vertFoV = 41.41
 ap = argparse.ArgumentParser()
 ap.add_argument("-d", "--display", type=int, default=-1, help="1 - display, 0 - don't display")
 args = vars(ap.parse_args())
@@ -54,17 +70,20 @@ while 1:
 	sortIdx = stats[:, 3].argsort()[::-1]
 	sortedStats = stats[sortIdx]
 	sortedCentroids = centroids[sortIdx]	
-	# Remove all components less thn 28 * 28 which is the size of the pictures
+	# Remove all components less than 28 * 28 which is the size of the pictures
 	# in the MNIST dataset. Consider that as minimum for character recognition
-	areaIdx = sortedStats[:, cv2.CC_STAT_AREA] > 784
+	# Remove components greater than 200*200, we won't be close to the marker so
+	# it can't be very large
+	areaIdx = sortedStats[:, cv2.CC_STAT_AREA] > 784 + sortedStats[:, cv2.CC_STAT_AREA] < 40000
 	sortedStats = sortedStats[areaIdx, :]
 	sortedCentroids = sortedCentroids[areaIdx, :]
 	numLabels = len(sortedStats)
 	
 	rects = []
 	centers = []
+	locs = []
 	#print(sortedStats[:, cv2.CC_STAT_AREA])
-	for i in range(1, numLabels):
+	for i in range(0, numLabels):
 		rect = (sortedStats[i, cv2.CC_STAT_LEFT],
 		        sortedStats[i, cv2.CC_STAT_TOP],
 		        sortedStats[i, cv2.CC_STAT_LEFT] + sortedStats[i, cv2.CC_STAT_WIDTH],
@@ -72,12 +91,14 @@ while 1:
 		center = (int(sortedCentroids[i, 0]), int(sortedCentroids[i, 1]))
 		rects.append(rect)
 		centers.append(center)
+		location = getLocation(center, lat, long, heading)
+		locs.append(location)
 		#filename = "temp.png"
 		#cv2.imwrite(filename, frame[rect[0]:rect[2], rect[1]:rect[3]])
 		#text = pytesseract.image_to_string(Image.open('temp.png'))
 		#print(text)
 		#os.remove(filename)
-		cv2.putText(frame, str(i), center, cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 2, cv2.LINE_AA)
+		#cv2.putText(frame, str(i), center, cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 2, cv2.LINE_AA)
 		cv2.rectangle(frame, (rect[0], rect[1]), (rect[2], rect[3]), (0, 0, 255), 2)	
 	
 	if disp:
